@@ -117,6 +117,8 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
 .lrow .lbtns { display: flex; gap: 6px; flex: none; }
 .tabs { display: flex; gap: 6px; }
 .tabs .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.toast button { margin-left: 12px; background: none; border: 1px solid currentColor; color: inherit; border-radius: 4px; padding: 2px 10px; cursor: pointer; font-weight: 600; }
+.sh { margin: 8px 0 0; font-size: .95rem; font-weight: 600; }
 .issinfo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; }
 .issinfo div { min-width: 0; overflow-wrap: anywhere; }
 .issinfo small { display: block; color: var(--muted); font-size: 12px; }
@@ -168,6 +170,7 @@ tr.main.sel td { background: var(--accent-soft); }
     <div class="actions">
       <button class="btn primary" id="btnAdd" type="button" hidden>Add printer</button>
       <a class="btn" id="btnSheet" href="#" target="_blank" rel="noopener" hidden>Open Sheet</a>
+      <button class="btn" id="btnSafety" type="button" hidden>Safety</button>
       <button class="btn" id="btnLists" type="button" hidden>Manage lists</button>
       <button class="btn" id="btnView" type="button">Dashboard</button>
       <button class="btn" id="btnInstall" type="button">Add to phone</button>
@@ -178,6 +181,7 @@ tr.main.sel td { background: var(--accent-soft); }
     </div>
   </header>
   <p class="conn" id="conn" role="status">Loading your sheet…</p>
+  <p class="conn warn" id="backupNote" hidden></p>
 
   <section class="panel" id="installPanel" hidden aria-labelledby="installTitle">
     <h2 id="installTitle">Add this to your home screen</h2>
@@ -207,6 +211,22 @@ tr.main.sel td { background: var(--accent-soft); }
       <button class="btn" id="btnCancel" type="button">Cancel</button>
       <span class="err" id="formErr" role="alert"></span>
     </div>
+  </section>
+
+  <section class="panel" id="safetyPanel" hidden aria-labelledby="safetyTitle">
+    <div class="dash-top"><h2 id="safetyTitle">Safety</h2><button class="btn small" id="safetyClose" type="button">Close</button></div>
+    <h3 class="sh">Data check</h3>
+    <div id="checkBody"></div>
+    <h3 class="sh">Backup</h3>
+    <p id="backupInfo"></p>
+    <div class="row">
+      <button class="btn primary" id="btnBackup" type="button">Download backup</button>
+      <label class="btn" for="restoreFile" style="cursor:pointer">Restore from backup file</label>
+      <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+    </div>
+    <span class="err" id="safetyErr" role="alert"></span>
+    <h3 class="sh">Recently deleted</h3>
+    <div id="trashBody"></div>
   </section>
 
   <section class="panel" id="issuePanel" hidden aria-labelledby="issueTitle">
@@ -382,14 +402,15 @@ tr.main.sel td { background: var(--accent-soft); }
     $('toolbarSec').hidden = dashOn;
     $('tablewrap').hidden = dashOn;
     $('footNote').hidden = dashOn;
-    if (dashOn) { $('empty').hidden = true; closeForm(); $('listsPanel').hidden = true; $('issuePanel').hidden = true; curRow = null; }
+    if (dashOn) { $('empty').hidden = true; closeForm(); $('listsPanel').hidden = true; $('issuePanel').hidden = true; curRow = null; $('safetyPanel').hidden = true; }
     render();
   }
   $('btnView').addEventListener('click', function () { setView(state.view === 'register' ? 'dashboard' : 'register'); });
   var canWrite = !!SCRIPT_URL;
   var editingRow = null; // sheet row number being edited, or null when adding
+  var editingOrig = null; // copy of the printer as it was when the form opened
 
-  if (canWrite) { $('btnAdd').hidden = false; $('btnLists').hidden = false; }
+  if (canWrite) { $('btnAdd').hidden = false; $('btnLists').hidden = false; $('btnSafety').hidden = false; }
   if (SHEET_URL) { $('btnSheet').hidden = false; $('btnSheet').href = SHEET_URL; }
 
   /* ---------- add / edit form ---------- */
@@ -414,6 +435,7 @@ tr.main.sel td { background: var(--accent-soft); }
   function openForm(record) {
     $('formErr').textContent = '';
     editingRow = record ? record._row : null;
+    editingOrig = record ? Object.assign({}, record) : null;
     $('editTitle').textContent = record ? 'Edit printer' : 'Add printer';
     $('btnSave').textContent = record ? 'Update printer' : 'Save';
     FIELDS.forEach(function (f) { $('f_' + f.key).value = record ? (record[f.key] || '') : ''; });
@@ -499,20 +521,27 @@ tr.main.sel td { background: var(--accent-soft); }
   var LIST_LABEL = { department: 'department', location: 'location' };
   function listErr(m) { $('listErr').textContent = m || ''; }
   function renameInSheet(field, group, newName) {
-    var todo = group.rows.filter(function (r) { return r[field] !== newName; });
-    var done = 0;
-    function next() {
-      if (!todo.length) return Promise.resolve();
-      var r = todo.shift(), data = {};
-      FIELDS.forEach(function (f) { data[f.key] = r[f.key] || ''; });
-      data[field] = newName;
-      return postScript({ action: 'update', row: r._row, data: data }).then(function (res) {
-        if (!res.ok) throw new Error(res.error || 'Update failed');
-        done++; toast('Updating printers… ' + done + ' of ' + (done + todo.length));
-        return next();
+    var todo = group.rows.filter(function (r) { return r[field] !== newName; }), done = 0;
+    return fetchFresh().then(function (fresh) {
+      todo.forEach(function (r) {
+        var cur = fresh.filter(function (x) { return x._row === r._row; })[0];
+        if (!cur || !sameData(cur, r)) throw conflictError();
       });
-    }
-    return next().then(function () { return done; });
+      function next() {
+        if (!todo.length) return Promise.resolve();
+        var r = todo[0], data = {};
+        FIELDS.forEach(function (f) { data[f.key] = r[f.key] || ''; });
+        data[field] = newName;
+        return postSafe({ action: 'update', row: r._row, data: data }, function () {
+          return fetchFresh().then(function (f) { return f.some(function (x) { return x._row === r._row && sameData(x, data); }); });
+        }).then(function (res) {
+          if (!res.ok) throw new Error(res.error || 'Update failed');
+          todo.shift(); done++; toast('Updating printers\u2026 ' + done + ' of ' + (done + todo.length));
+          return sleep(250);
+        }).then(next);
+      }
+      return next();
+    }).then(function () { return done; }, function (e) { e.done = done; throw e; });
   }
   function doRename(group) {
     var field = listField; listErr('');
@@ -524,7 +553,7 @@ tr.main.sel td { background: var(--accent-soft); }
     if (!confirm(msg)) return;
     if (!group.count) { swapExtra(field, group.label, finalName); renderLists(); return; }
     renameInSheet(field, group, finalName).then(function () { toast('Updated'); load(false); })
-      .catch(function (e) { listErr('Stopped: ' + e.message + '. Refresh and check the sheet.'); load(false); });
+      .catch(function (e) { listErr('Stopped after ' + (e.done || 0) + ' printer(s): ' + friendlyErr(e) + ' Run the same action again to continue.'); load(false); });
   }
   function doRemove(group) {
     var field = listField; listErr('');
@@ -540,7 +569,7 @@ tr.main.sel td { background: var(--accent-soft); }
     if (!target) { listErr('"' + nn + '" is not an existing ' + LIST_LABEL[field] + '. Add it first, or type one from the list.'); return; }
     if (!confirm('Move ' + group.count + ' printer(s) to "' + target.label + '" and remove "' + group.label + '"?')) return;
     renameInSheet(field, group, target.label).then(function () { swapExtra(field, group.label, null); toast('Removed'); load(false); })
-      .catch(function (e) { listErr('Stopped: ' + e.message + '. Refresh and check the sheet.'); load(false); });
+      .catch(function (e) { listErr('Stopped after ' + (e.done || 0) + ' printer(s): ' + friendlyErr(e) + ' Run the same action again to continue.'); load(false); });
   }
   function swapExtra(field, oldName, newName) {
     var x = getExtras(), k = nameKey(oldName);
@@ -591,11 +620,10 @@ tr.main.sel td { background: var(--accent-soft); }
   }
   function todayStr() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function loadIssues() {
-    fetch(SCRIPT_URL + '?action=issues&t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
+    getJson(SCRIPT_URL + '?action=issues&t=' + Date.now())
       .then(function (res) {
         if (!res.ok || !Array.isArray(res.issues)) throw new Error('The script has no issue tracker yet. Add the issue-tracker code to your Apps Script and redeploy it.');
-        issues = res.issues; issuesState = 'ok'; issuesMsg = '';
+        issues = res.issues; issuesState = 'ok'; issuesMsg = ''; writeCache();
       })
       .catch(function (e) { issues = []; issuesState = 'error'; issuesMsg = e.message; })
       .then(function () { render(); if (!$('issuePanel').hidden) renderIssues(); });
@@ -636,10 +664,15 @@ tr.main.sel td { background: var(--accent-soft); }
   }
   function deleteIssue(i) {
     if (!confirm('Delete this issue note?')) return;
-    postScript({ action: 'issueDelete', row: i._row, date: i.date, note: i.note }).then(function (res) {
+    var snap = { date: i.date, key: i.key, printerName: i.printerName, department: i.department, note: i.note };
+    postSafe({ action: 'issueDelete', row: i._row, date: i.date, note: i.note }, function () {
+      return fetchIssuesFresh().then(function (f) { return !f.some(function (x) { return x._row === i._row && x.date === i.date && x.note === i.note; }); });
+    }).then(function (res) {
       if (!res.ok) { $('issErr').textContent = res.error || 'Could not delete.'; loadIssues(); return; }
-      toast('Issue deleted'); loadIssues();
-    }).catch(function (e) { $('issErr').textContent = 'Request failed: ' + e.message; });
+      var item = addTrash('issue', (i.printerName || 'printer') + ': ' + String(i.note).slice(0, 40), snap);
+      undoToast('Issue deleted', item, 'Issue restored', function () { loadIssues(); });
+      loadIssues();
+    }).catch(function (e) { $('issErr').textContent = friendlyErr(e); });
   }
   $('issClose').addEventListener('click', closeIssues);
   $('issClose2').addEventListener('click', closeIssues);
@@ -648,22 +681,90 @@ tr.main.sel td { background: var(--accent-soft); }
     if (!pr) { $('issErr').textContent = 'Select a printer first.'; return; }
     if (note.length < 3) { $('issErr').textContent = 'Write a note saying what happened.'; return; }
     $('issSave').disabled = true; $('issErr').textContent = '';
-    postScript({ action: 'issueAdd', data: { date: $('issDate').value || todayStr(), key: printerKey(pr), printerName: pr.name || '', department: pr.department || '', note: note } })
+var idata = { date: $('issDate').value || todayStr(), key: printerKey(pr), printerName: pr.name || '', department: pr.department || '', note: note };
+    var ib = issues.filter(function (i) { return sameIssue(i, idata); }).length;
+    postSafe({ action: 'issueAdd', data: idata }, function () { return fetchIssuesFresh().then(function (f) { return f.filter(function (i) { return sameIssue(i, idata); }).length > ib; }); })
       .then(function (res) {
         $('issSave').disabled = false;
         if (!res.ok) { $('issErr').textContent = res.error || 'Could not save.'; return; }
         $('issNote').value = ''; toast('Issue logged for ' + (pr.name || 'printer')); loadIssues();
-      }).catch(function (e) { $('issSave').disabled = false; $('issErr').textContent = 'Request failed: ' + e.message; });
+      }).catch(function (e) { $('issSave').disabled = false; $('issErr').textContent = friendlyErr(e) + ' Your note is still in the box.'; });
   });
 
+  /* ---------- safe sending: retries, Google limits, stale-row checks ---------- */
+  var QUOTA_RE = /too many times|quota|limit exceeded|rate limit|service invoked|try again later|unavailable/i;
+  var lastLoadAt = 0, pauseUntil = 0, problems = [];
+  function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  function parseReply(t) {
+    try { return JSON.parse(t); } catch (e) {
+      var q = QUOTA_RE.test(t), err = new Error(q ? 'Google is limiting requests right now' : 'The script gave an unexpected answer');
+      err.quota = q; throw err;
+    }
+  }
+  function getJson(url) { return fetch(url, { cache: 'no-store' }).then(function (r) { return r.text(); }).then(parseReply); }
   function postScript(payload) {
     return fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight to Apps Script
       body: JSON.stringify(payload)
-    }).then(function (r) { return r.json(); });
+    }).then(function (r) { return r.text(); }).then(parseReply);
   }
-  $('btnSave').addEventListener('click', function () {
+  function fetchFresh() {
+    return getJson(SCRIPT_URL + '?t=' + Date.now()).then(function (res) {
+      if (!res.ok || !Array.isArray(res.rows)) throw new Error(res.error || 'Script error');
+      return res.rows.map(function (r) { r._id = r._row; return r; });
+    });
+  }
+  function fetchIssuesFresh() {
+    return getJson(SCRIPT_URL + '?action=issues&t=' + Date.now()).then(function (res) {
+      if (!res.ok || !Array.isArray(res.issues)) throw new Error('Issue list unavailable');
+      return res.issues;
+    });
+  }
+  function sameData(r, d) { return FIELDS.every(function (f) { return String(r[f.key] || '').trim() === String(d[f.key] || '').trim(); }); }
+  function countMatching(list, d) { return list.filter(function (r) { return sameData(r, d); }).length; }
+  function sameIssue(i, x) { return i.date === x.date && i.note === x.note && String(i.key || '') === String(x.key || ''); }
+  function conflictError() {
+    var e = new Error('This printer was changed in the sheet after you opened it. The list was refreshed. Open it again and redo your change.');
+    e.conflict = true; e.noRetry = true; return e;
+  }
+  function verifyUnchanged(rec) { // row numbers shift if someone edits the sheet by hand: confirm the row is still this printer
+    return fetchFresh().then(function (fresh) {
+      var cur = fresh.filter(function (r) { return r._row === rec._row; })[0];
+      if (!cur || !sameData(cur, rec)) throw conflictError();
+      return fresh;
+    });
+  }
+  /* Sends a change. If the connection drops or Google is busy it waits and tries again, but first asks the
+     sheet whether the first attempt already went through, so nothing is added or deleted twice. */
+  function postSafe(payload, applied) {
+    var attempt = 0, max = 3;
+    function go() {
+      attempt++;
+      return postScript(payload).then(function (res) {
+        if (!res.ok && QUOTA_RE.test(String(res.error || ''))) { var q = new Error('Google is limiting requests right now'); q.quota = true; throw q; }
+        return res;
+      }).catch(function (e) {
+        if (attempt >= max || e.noRetry) throw e;
+        var wait = (e.quota ? 6000 : 1500) * attempt;
+        toast((e.quota ? 'Google is busy' : 'Connection problem') + '. Trying again in ' + Math.round(wait / 1000) + 's (' + attempt + ' of ' + (max - 1) + ')…', null, null, wait + 1500);
+        return sleep(wait).then(function () {
+          if (!applied) return go();
+          return applied().then(function (done) { return done ? { ok: true, recovered: true } : go(); }, function () { return go(); });
+        });
+      });
+    }
+    return go();
+  }
+  function friendlyErr(e) {
+    if (e.conflict || e.plain) return e.message;
+    if (e.quota) return 'Google is limiting requests right now. Wait a minute and try again. Nothing was lost.';
+    if (/failed to fetch|networkerror|load failed|network request/i.test(e.message)) return 'Could not reach the sheet. Check your internet and try again. Nothing was lost.';
+    return 'Request failed: ' + e.message;
+  }
+
+  /* ---------- save a printer ---------- */
+  function doSave() {
     var data = {};
     FIELDS.forEach(function (f) { data[f.key] = $('f_' + f.key).value.trim(); });
     var isEdit = !!editingRow;
@@ -685,22 +786,189 @@ tr.main.sel td { background: var(--accent-soft); }
         return;
       }
     }
+    var orig = editingOrig, rowNo = editingRow, before = isEdit ? 0 : countMatching(rows, data);
+    var payload = isEdit ? { action: 'update', row: rowNo, data: data } : { action: 'add', data: data };
+    var check = isEdit
+      ? function () { return fetchFresh().then(function (f) { return f.some(function (r) { return r._row === rowNo && sameData(r, data); }); }); }
+      : function () { return fetchFresh().then(function (f) { return countMatching(f, data) > before; }); };
     $('btnSave').disabled = true; $('formErr').textContent = '';
-    var payload = isEdit ? { action: 'update', row: editingRow, data: data } : { action: 'add', data: data };
-    postScript(payload).then(function (res) {
+    (isEdit ? verifyUnchanged(orig) : Promise.resolve()).then(function () { return postSafe(payload, check); }).then(function (res) {
       $('btnSave').disabled = false;
       if (!res.ok) { $('formErr').textContent = res.error || (isEdit ? 'Could not update.' : 'Could not save.'); return; }
       if (!isEdit) clearDraft();
       closeForm(); toast(isEdit ? 'Printer updated' : 'Printer added'); load(false);
-    }).catch(function (e) { $('btnSave').disabled = false; $('formErr').textContent = 'Request failed: ' + e.message; });
-  });
-  function deleteRecord(record) {
-    if (!confirm('Delete "' + (record.name || 'this printer') + '" from the sheet?')) return;
-    postScript({ action: 'delete', row: record._row }).then(function (res) {
-      if (!res.ok) { toast(res.error || 'Could not delete.'); return; }
-      toast('Printer deleted'); load(false);
-    }).catch(function (e) { toast('Request failed: ' + e.message); });
+    }).catch(function (e) {
+      $('btnSave').disabled = false; $('formErr').textContent = friendlyErr(e) + (e.conflict ? '' : ' Your entry is still in the form.');
+      if (e.conflict) load(false);
+    });
   }
+  $('btnSave').addEventListener('click', function () {
+    $('btnSave').disabled = true; $('formErr').textContent = 'Checking the sheet…';
+    fetchFresh().then(function (f) { rows = f; }).catch(function () {}).then(function () { $('btnSave').disabled = false; $('formErr').textContent = ''; doSave(); });
+  });
+
+  /* ---------- recently deleted (undo) ---------- */
+  var TRASH_KEY = 'printer-registry-trash';
+  function getTrash() { try { return JSON.parse(localStorage.getItem(TRASH_KEY) || '[]') || []; } catch (e) { return []; } }
+  function setTrash(t) { try { localStorage.setItem(TRASH_KEY, JSON.stringify(t.slice(0, 30))); } catch (e) {} }
+  function addTrash(type, label, data) {
+    var item = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), type: type, label: label, at: new Date().toISOString(), data: data };
+    var t = getTrash(); t.unshift(item); setTrash(t); return item;
+  }
+  function removeTrash(id) { setTrash(getTrash().filter(function (i) { return i.id !== id; })); }
+  function plainErr(msg) { var e = new Error(msg); e.plain = true; e.noRetry = true; return e; }
+  function restoreItem(item) {
+    var d = item.data;
+    if (item.type === 'printer') {
+      var U = [['ip', 'IP address'], ['oldSerial', 'Old serial'], ['newSerial', 'New serial']];
+      for (var u = 0; u < U.length; u++) {
+        var val = dupKey(d[U[u][0]]);
+        if (val && rows.some(function (r) { return dupKey(r[U[u][0]]) === val; })) return Promise.reject(plainErr('Cannot restore "' + (d.name || 'printer') + '": ' + U[u][1] + ' "' + d[U[u][0]] + '" is already used by another printer.'));
+      }
+      var before = countMatching(rows, d);
+      return postSafe({ action: 'add', data: d }, function () { return fetchFresh().then(function (f) { return countMatching(f, d) > before; }); })
+        .then(function (res) { if (!res.ok) throw new Error(res.error || 'Could not restore.'); });
+    }
+    var ib = issues.filter(function (i) { return sameIssue(i, d); }).length;
+    return postSafe({ action: 'issueAdd', data: d }, function () { return fetchIssuesFresh().then(function (f) { return f.filter(function (i) { return sameIssue(i, d); }).length > ib; }); })
+      .then(function (res) { if (!res.ok) throw new Error(res.error || 'Could not restore.'); });
+  }
+  function undoToast(msg, item, doneMsg, reload) {
+    toast(msg, 'Undo', function () {
+      restoreItem(item).then(function () { removeTrash(item.id); toast(doneMsg); reload(); renderSafetyIfOpen(); })
+        .catch(function (e) { toast(friendlyErr(e), null, null, 6000); });
+    }, 15000);
+  }
+  function deleteRecord(record) {
+    var n = issueCount(record);
+    if (!confirm('Delete "' + (record.name || 'this printer') + '" from the sheet?' + (n ? '\n\nIt has ' + n + ' logged issue(s). They stay in the Issues tab.' : ''))) return;
+    var snap = {}; FIELDS.forEach(function (f) { snap[f.key] = record[f.key] || ''; });
+    verifyUnchanged(record).then(function () {
+      return postSafe({ action: 'delete', row: record._row }, function () {
+        return fetchFresh().then(function (f) { return !f.some(function (r) { return r._row === record._row && sameData(r, record); }); });
+      });
+    }).then(function (res) {
+      if (!res.ok) { toast(res.error || 'Could not delete.'); return; }
+      var item = addTrash('printer', record.name || 'printer', snap);
+      undoToast('Printer deleted', item, 'Printer restored', function () { load(false); });
+      load(false);
+    }).catch(function (e) { toast(friendlyErr(e), null, null, 6000); if (e.conflict) load(false); });
+  }
+
+  /* ---------- data check ---------- */
+  function computeProblems() {
+    var out = [];
+    function nm(r) { return (r.name || '(no name)') + ' (row ' + r._row + ')'; }
+    [['ip', 'IP address'], ['oldSerial', 'Old serial'], ['newSerial', 'New serial']].forEach(function (u) {
+      var m = {};
+      rows.forEach(function (r) { var k = dupKey(r[u[0]]); if (k) (m[k] = m[k] || []).push(r); });
+      Object.keys(m).forEach(function (k) { if (m[k].length > 1) out.push(u[1] + ' "' + m[k][0][u[0]] + '" is used by ' + m[k].map(nm).join(' and ')); });
+    });
+    var okStatus = STATUS_OPTIONS.map(function (x) { return x.toLowerCase(); });
+    rows.forEach(function (r) {
+      var miss = FIELDS.filter(function (f) { return f.required && !String(r[f.key] || '').trim(); }).map(function (f) { return f.label; });
+      if (miss.length) out.push(nm(r) + ' is missing: ' + miss.join(', '));
+      var ip = String(r.ip || '').trim();
+      if (ip && dupKey(ip) && /\d/.test(ip) && !(/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && ip.split('.').every(function (p) { return Number(p) <= 255; }))) out.push(nm(r) + ' has an IP address that does not look right: "' + ip + '"');
+      var st = String(r.status || '').trim();
+      if (st && okStatus.indexOf(st.toLowerCase()) < 0) out.push(nm(r) + ' has an unknown status: "' + st + '"');
+    });
+    ['department', 'location', 'company'].forEach(function (f) {
+      listGroups(f).forEach(function (g) {
+        var names = Object.keys(g.variants);
+        if (names.length > 1) out.push('Different spellings of one ' + f + ': ' + names.map(function (v) { return '"' + v + '"'; }).join(', ') + ' (fix in Manage lists)');
+      });
+    });
+    return out;
+  }
+
+  /* ---------- backup and restore ---------- */
+  var BACKUP_KEY = 'printer-registry-last-backup', CACHE_KEY = 'printer-registry-cache';
+  function writeCache() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), rows: rows, issues: issues })); } catch (e) {} }
+  function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
+  function backupAge() { var t = 0; try { t = Number(localStorage.getItem(BACKUP_KEY)) || 0; } catch (e) {} return t ? (Date.now() - t) / 86400000 : Infinity; }
+  function downloadBackup() {
+    if (!rows.length) { toast('Nothing to back up yet'); return; }
+    var data = {
+      app: 'printer-registry', version: 1, exportedAt: new Date().toISOString(),
+      printers: rows.map(function (r) { var o = {}; FIELDS.forEach(function (f) { o[f.key] = r[f.key] || ''; }); return o; }),
+      issues: issues.map(function (i) { return { date: i.date, key: i.key, printerName: i.printerName, department: i.department, note: i.note }; })
+    };
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    a.download = 'printer-registry-backup-' + todayStr() + '.json'; document.body.append(a); a.click(); a.remove();
+    try { localStorage.setItem(BACKUP_KEY, String(Date.now())); } catch (e) {}
+    toast('Backup downloaded (' + data.printers.length + ' printers, ' + data.issues.length + ' issues)'); updateSafetyLabel();
+  }
+  function safetyErr(m) { $('safetyErr').textContent = m || ''; }
+  function runRestore(ps, is) {
+    var queue = ps.map(function (p) { return { type: 'printer', data: p }; }).concat(is.map(function (x) { return { type: 'issue', data: x }; }));
+    var total = queue.length, done = 0;
+    function next() {
+      if (!queue.length) return Promise.resolve();
+      return restoreItem(queue[0]).then(function () { queue.shift(); done++; toast('Restoring… ' + done + ' of ' + total); return sleep(300); }).then(next);
+    }
+    next().then(function () { toast('Restored ' + done + ' item(s)'); load(false); })
+      .catch(function (e) { safetyErr('Stopped after ' + done + ' of ' + total + ': ' + friendlyErr(e) + ' Run the restore again to continue. Items already restored are skipped.'); load(false); });
+  }
+  $('restoreFile').addEventListener('change', function (ev) {
+    var f = ev.target.files && ev.target.files[0]; safetyErr('');
+    if (!f) return;
+    f.text().then(function (t) {
+      ev.target.value = '';
+      var d; try { d = JSON.parse(t); } catch (e) { d = null; }
+      if (!d || d.app !== 'printer-registry' || !Array.isArray(d.printers)) { safetyErr('That file is not a Printer Registry backup.'); return; }
+      var have = {}; rows.forEach(function (r) { have[printerKey(r)] = 1; });
+      var ps = d.printers.filter(function (p) { return !have[printerKey(p)]; });
+      var is = (d.issues || []).filter(function (x) { return !issues.some(function (i) { return sameIssue(i, x); }); });
+      if (!ps.length && !is.length) { toast('Nothing to restore. Everything in the backup is already in the sheet.', null, null, 5000); return; }
+      if (!confirm('Restore ' + ps.length + ' missing printer(s) and ' + is.length + ' missing issue note(s)?\n\nPrinters and notes already in the sheet are not changed.')) return;
+      runRestore(ps, is);
+    });
+  });
+  $('btnBackup').addEventListener('click', downloadBackup);
+
+  /* ---------- safety panel ---------- */
+  function renderSafetyIfOpen() { if (!$('safetyPanel').hidden) renderSafety(); }
+  function renderSafety() {
+    problems = computeProblems();
+    var cb = $('checkBody'); cb.textContent = '';
+    if (!problems.length) cb.append(h('p', { text: 'No problems found in ' + rows.length + ' printers.' }));
+    else {
+      cb.append(h('p', { class: 'err', text: problems.length + ' problem' + (problems.length === 1 ? '' : 's') + ' found. They usually come from editing the sheet directly.' }));
+      problems.slice(0, 60).forEach(function (m) { cb.append(h('div', { class: 'lrow' }, h('span', { class: 'lmeta', text: m }))); });
+      if (problems.length > 60) cb.append(h('p', { class: 'dim', text: '+ ' + (problems.length - 60) + ' more' }));
+    }
+    var age = backupAge();
+    $('backupInfo').textContent = age === Infinity ? 'No backup downloaded on this device yet. The file is independent of Google and can restore missing printers and issue notes.'
+      : 'Last backup downloaded ' + (age < 1 ? 'today' : Math.floor(age) + ' day(s) ago') + '. Restore adds only what is missing and never changes existing rows.';
+    var tb = $('trashBody'); tb.textContent = '';
+    var t = getTrash();
+    if (!t.length) tb.append(h('p', { text: 'Nothing deleted recently on this device.' }));
+    t.forEach(function (it) {
+      tb.append(h('div', { class: 'lrow' },
+        h('span', { class: 'lname', text: (it.type === 'printer' ? 'Printer: ' : 'Issue: ') + it.label }),
+        h('span', { class: 'lmeta', text: new Date(it.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }),
+        h('div', { class: 'lbtns' },
+          h('button', { class: 'btn small', type: 'button', onclick: function () {
+            safetyErr('');
+            restoreItem(it).then(function () { removeTrash(it.id); toast('Restored'); load(false); renderSafety(); }).catch(function (e) { safetyErr(friendlyErr(e)); });
+          } }, 'Restore'),
+          h('button', { class: 'btn small', type: 'button', onclick: function () { removeTrash(it.id); renderSafety(); } }, 'Forget'))));
+    });
+  }
+  function updateSafetyLabel() {
+    $('btnSafety').textContent = 'Safety' + (problems.length ? ' (' + problems.length + ')' : '');
+    var age = backupAge(), stale = canWrite && rows.length && age > 7, bn = $('backupNote');
+    bn.hidden = !stale; bn.textContent = '';
+    if (stale) bn.append(document.createTextNode(age === Infinity ? 'No backup downloaded yet. ' : 'Your last backup is over a week old. '), h('button', { class: 'btn small', type: 'button', onclick: downloadBackup }, 'Download backup now'));
+    renderSafetyIfOpen();
+  }
+  $('btnSafety').addEventListener('click', function () {
+    var p = $('safetyPanel'); p.hidden = !p.hidden;
+    if (!p.hidden) { safetyErr(''); renderSafety(); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  });
+  $('safetyClose').addEventListener('click', function () { $('safetyPanel').hidden = true; });
 
   /* ---------- theme ---------- */
   var THEMES = ['auto', 'light', 'dark'], theme = 'auto';
@@ -718,9 +986,11 @@ tr.main.sel td { background: var(--accent-soft); }
   applyTheme();
 
   var toastTimer;
-  function toast(msg) {
-    var t = $('toast'); t.textContent = msg; t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 3600);
+  function toast(msg, actionLabel, actionFn, ms) {
+    var t = $('toast'); t.textContent = msg;
+    if (actionLabel) t.append(h('button', { type: 'button', onclick: function () { t.hidden = true; actionFn(); } }, actionLabel));
+    t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, ms || 3600);
   }
   function setConn(warn, text) { var el = $('conn'); el.className = 'conn' + (warn ? ' warn' : ''); el.textContent = text; }
   function clock(d) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
@@ -931,21 +1201,32 @@ tr.main.sel td { background: var(--accent-soft); }
 
   /* ---------- loading ---------- */
   function load(manual) {
+    if (manual && Date.now() - lastLoadAt < 8000) { toast('Just refreshed. Wait a few seconds.'); return; }
+    lastLoadAt = Date.now();
     setConn(false, 'Loading your sheet…');
     if (canWrite) {
-      fetch(SCRIPT_URL + '?t=' + Date.now(), { cache: 'no-store' })
-        .then(function (r) { return r.json(); })
+      getJson(SCRIPT_URL + '?t=' + Date.now())
         .then(function (res) {
           if (!res.ok) throw new Error(res.error || 'Script error');
           rows = res.rows.map(function (r) { r._id = r._row; return r; });
           headers = FIELDS.map(function (f) { return f.label; });
-          loadedAt = new Date(); $('fallback').hidden = true; loadIssues();
+          loadedAt = new Date(); $('fallback').hidden = true; loadIssues(); writeCache(); problems = computeProblems(); updateSafetyLabel();
           setConn(false, rows.length + ' printers loaded at ' + clock(loadedAt) + '. Add, edit and delete write straight to the sheet.');
           render();
           if (manual) toast('Sheet reloaded');
         })
         .catch(function (e) {
-          setConn(true, rows.length ? 'Could not refresh (' + e.message + '). Showing the rows loaded at ' + clock(loadedAt) + '.' : 'Could not load from the script (' + e.message + ').');
+          if (e.quota) pauseUntil = Date.now() + 120000;
+          if (!rows.length) {
+            var c = readCache();
+            if (c && c.rows && c.rows.length) {
+              rows = c.rows; issues = c.issues || []; issuesState = 'ok'; loadedAt = new Date(c.at);
+              problems = computeProblems(); updateSafetyLabel();
+              setConn(true, friendlyErr(e) + ' Showing the saved copy from ' + loadedAt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + '. Saving works again once the sheet reconnects.');
+              render(); return;
+            }
+          }
+          setConn(true, rows.length ? friendlyErr(e) + ' Showing the rows loaded at ' + clock(loadedAt) + '.' : friendlyErr(e));
           render();
         });
       return;
@@ -988,7 +1269,7 @@ tr.main.sel td { background: var(--accent-soft); }
   $('installClose').addEventListener('click', function () { $('installPanel').hidden = true; });
 
   $('btnRefresh').addEventListener('click', function () { load(true); });
-  setInterval(function () { if (!document.hidden) load(false); }, REFRESH_MS);
+  setInterval(function () { if (!document.hidden && Date.now() >= pauseUntil) load(false); }, REFRESH_MS);
 
   $('fbApply').addEventListener('click', function () {
     $('fbErr').textContent = '';
