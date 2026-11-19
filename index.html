@@ -116,8 +116,18 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
   .chartcard { padding: 12px; }
 }
 @media (max-width: 760px) {
+  body { padding: 18px 12px 40px; }
+  .top { align-items: flex-start; }
+  .actions { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+  .actions .btn { flex: 1 1 120px; text-align: center; }
+  .toolbar .tool, .toolbar .tool.grow { flex: 1 1 100%; }
+  .shown { margin-left: 0; width: 100%; }
+  .formgrid { grid-template-columns: 1fr; }
+  .dashgrid { grid-template-columns: 1fr; gap: 12px; }
+  .donutwrap { gap: 14px; }
+  .donut { width: 96px; height: 96px; min-width: 96px; }
   .tablewrap { border: 0; background: transparent; overflow: visible; }
-  table { min-width: 0; }
+  table, #dataTable { width: 100% !important; min-width: 0; table-layout: auto; }
   table, tbody, td { display: block; }
   thead { display: none; }
   tr.main { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin-top: 10px; padding: 6px 0; }
