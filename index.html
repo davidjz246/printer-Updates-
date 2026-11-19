@@ -110,6 +110,25 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
 .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; }
 .legend li { display: flex; align-items: center; gap: 8px; }
 .legend .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.lrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.lrow:last-child { border-bottom: 0; }
+.lrow .lname { font-weight: 600; flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.lrow .lmeta { color: var(--muted); font-size: 13px; flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.lrow .lbtns { display: flex; gap: 6px; flex: none; }
+.tabs { display: flex; gap: 6px; }
+.tabs .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.issinfo { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; }
+.issinfo div { min-width: 0; overflow-wrap: anywhere; }
+.issinfo small { display: block; color: var(--muted); font-size: 12px; }
+tr.main.clickable { cursor: pointer; }
+tr.main.sel td { background: var(--accent-soft); }
+.issuebtn { border: 0; background: none; padding: 0; cursor: pointer; }
+.issuebtn .badge { cursor: pointer; }
+.hist { display: flex; flex-direction: column; }
+.hitem { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.hitem:last-child { border-bottom: 0; }
+.hhead { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.hnote { white-space: pre-wrap; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 @media (max-width: 1366px) and (min-width: 761px) {
   .dashgrid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
@@ -149,6 +168,7 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
     <div class="actions">
       <button class="btn primary" id="btnAdd" type="button" hidden>Add printer</button>
       <a class="btn" id="btnSheet" href="#" target="_blank" rel="noopener" hidden>Open Sheet</a>
+      <button class="btn" id="btnLists" type="button" hidden>Manage lists</button>
       <button class="btn" id="btnView" type="button">Dashboard</button>
       <button class="btn" id="btnInstall" type="button">Add to phone</button>
       <button class="btn primary" id="btnRefresh" type="button">Refresh</button>
@@ -179,11 +199,44 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
   <section class="panel" id="editPanel" hidden aria-labelledby="editTitle">
     <h2 id="editTitle">Add printer</h2>
     <div class="formgrid" id="formgrid"></div>
+    <datalist id="deptList"></datalist>
+    <datalist id="locList"></datalist>
+    <datalist id="companyList"></datalist>
     <div class="row">
       <button class="btn primary" id="btnSave" type="button">Save</button>
       <button class="btn" id="btnCancel" type="button">Cancel</button>
       <span class="err" id="formErr" role="alert"></span>
     </div>
+  </section>
+
+  <section class="panel" id="issuePanel" hidden aria-labelledby="issueTitle">
+    <div class="dash-top"><h2 id="issueTitle">Printer</h2><button class="btn small" id="issClose2" type="button">Close</button></div>
+    <div class="issinfo" id="issInfo"></div>
+    <h2 style="margin-top:4px">Log an issue</h2>
+    <p>Write what went wrong and save. Each saved note counts as one issue for this printer.</p>
+    <div class="formgrid">
+      <div class="field"><label for="issDate">Date</label><input type="date" id="issDate"></div>
+      <div class="field wide"><label for="issNote">What happened *</label><textarea id="issNote" rows="3" placeholder="e.g. Paper jam, replaced the fuser, third time this month"></textarea></div>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="issSave" type="button">Log issue</button>
+      <button class="btn" id="issClose" type="button">Close</button>
+      <span class="err" id="issErr" role="alert"></span>
+    </div>
+    <h2 id="issHistTitle" style="margin-top:6px">History</h2>
+    <div class="hist" id="issHist"></div>
+  </section>
+
+  <section class="panel" id="listsPanel" hidden aria-labelledby="listsTitle">
+    <h2 id="listsTitle">Manage departments and locations</h2>
+    <p>Rename fixes spelling or merges duplicates: every printer using the old name is updated in the sheet. Remove moves the printers to another name first. Names added here with no printers are kept on this device only, until a printer uses them.</p>
+    <div class="tabs" id="listTabs"></div>
+    <div class="row">
+      <input type="text" id="listNew" placeholder="New name to add" aria-label="New name" style="flex:1 1 220px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px">
+      <button class="btn primary" id="listAdd" type="button">Add name</button>
+    </div>
+    <div id="listBody"></div>
+    <div class="row"><button class="btn" id="listClose" type="button">Close</button><span class="err" id="listErr" role="alert"></span></div>
   </section>
 
   <section class="stats" id="stats" aria-label="Summary"></section>
@@ -201,6 +254,7 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
       <option value="location">Sort: location</option>
       <option value="company">Sort: company</option>
       <option value="engine">Sort: highest engine cycle</option>
+      <option value="issues">Sort: most issues</option>
     </select></div>
     <span class="shown" id="shown"></span>
   </section>
@@ -241,6 +295,10 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
         <h3>Top departments</h3>
         <div class="barlist" id="barDept"></div>
       </div>
+      <div class="chartcard">
+        <h3>Printers with most issues</h3>
+        <div class="barlist" id="barIssues"></div>
+      </div>
     </div>
   </section>
 </div>
@@ -260,22 +318,27 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
   var REFRESH_MS = 5 * 60 * 1000;
 
   var FIELDS = [
-    { key: 'department', label: 'Department', aliases: ['dept', 'section', 'division'] },
-    { key: 'name', label: 'Printer name', aliases: ['name', 'printer', 'device', 'devicename'] },
+    { key: 'department', label: 'Department', aliases: ['dept', 'section', 'division'], required: true },
+    { key: 'name', label: 'Printer name', aliases: ['name', 'printer', 'device', 'devicename'], required: true },
     { key: 'model', label: 'Model', aliases: ['printermodel', 'devicemodel', 'modelnumber', 'modelno'] },
-    { key: 'status', label: 'Status', aliases: ['state', 'printerstatus', 'condition'] },
+    { key: 'status', label: 'Status', aliases: ['state', 'printerstatus', 'condition'], required: true },
     { key: 'oldSerial', label: 'Old serial', aliases: ['oldserialnumber', 'oldsn', 'serialold', 'previousserial'] },
     { key: 'ip', label: 'IP', aliases: ['ipaddress', 'ipaddr', 'ipv4'] },
     { key: 'newSerial', label: 'New serial', aliases: ['newserialnumber', 'newsn', 'serialnew', 'serial', 'serialnumber'] },
     { key: 'engine', label: 'Engine cycle', aliases: ['enginecycel', 'enginecycles', 'cycle', 'cycles', 'enginecount', 'pagecount', 'pages', 'counter'] },
     { key: 'port', label: 'Port', aliases: ['portnumber', 'patchport', 'switchport'] },
     { key: 'switch', label: 'Switch', aliases: ['switchname', 'networkswitch'] },
-    { key: 'location', label: 'Location', aliases: ['room', 'site', 'area', 'floor', 'office'] },
+    { key: 'location', label: 'Location', aliases: ['room', 'site', 'area', 'floor', 'office'], required: true },
     { key: 'company', label: 'Company', aliases: ['vendor', 'owner', 'organization', 'organisation'] },
     { key: 'notes', label: 'Notes', aliases: ['note', 'comment', 'comments', 'remarks'] }
   ];
+  // Department/Location/Company stay free-typed (new ones are legitimately added over time) but are
+  // backed by a datalist of values already in the sheet, so people reuse "supply chain" instead of
+  // typing a slightly different variant of it. Status stays a fixed dropdown since it's a closed set.
+  var DATALIST_FOR = { department: 'deptList', location: 'locList', company: 'companyList' };
   var COLWIDTH = { department: 120, name: 110, model: 78, status: 72, oldSerial: 88, ip: 96, newSerial: 96, engine: 68, port: 54, switch: 60, location: 88, company: 66, notes: 150 };
   var ACTIONS_WIDTH = 82;
+  var ISSUES_WIDTH = 60;
   var STATUS_OPTIONS = ['', 'Active', 'Pending', 'Inactive', 'Retired'];
   var STATUS_CLASS = { active: 'ok', pending: 'warn', inactive: 'bad', retired: 'bad' };
   var MONO = { oldSerial: 1, ip: 1, newSerial: 1, port: 1, switch: 1 };
@@ -302,6 +365,7 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
   }
 
   var ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  var ICON_ISSUE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
   var ICON_DELETE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
   function svg(markup) { var s = document.createElement('span'); s.innerHTML = markup; return s.firstElementChild; }
 
@@ -318,14 +382,14 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
     $('toolbarSec').hidden = dashOn;
     $('tablewrap').hidden = dashOn;
     $('footNote').hidden = dashOn;
-    if (dashOn) { $('empty').hidden = true; closeForm(); }
+    if (dashOn) { $('empty').hidden = true; closeForm(); $('listsPanel').hidden = true; $('issuePanel').hidden = true; curRow = null; }
     render();
   }
   $('btnView').addEventListener('click', function () { setView(state.view === 'register' ? 'dashboard' : 'register'); });
   var canWrite = !!SCRIPT_URL;
   var editingRow = null; // sheet row number being edited, or null when adding
 
-  if (canWrite) { $('btnAdd').hidden = false; }
+  if (canWrite) { $('btnAdd').hidden = false; $('btnLists').hidden = false; }
   if (SHEET_URL) { $('btnSheet').hidden = false; $('btnSheet').href = SHEET_URL; }
 
   /* ---------- add / edit form ---------- */
@@ -338,10 +402,13 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
         STATUS_OPTIONS.forEach(function (opt) { field.append(h('option', { value: opt, text: opt || '—' })); });
       } else if (f.key === 'notes') {
         field = h('textarea', { id: 'f_' + f.key, rows: 2 });
+      } else if (DATALIST_FOR[f.key]) {
+        field = h('input', { id: 'f_' + f.key, type: 'text', list: DATALIST_FOR[f.key], autocomplete: 'off' });
       } else {
         field = h('input', { id: 'f_' + f.key, type: 'text' });
       }
-      g.append(h('div', { class: 'field' + (f.key === 'notes' ? ' wide' : '') }, h('label', { text: f.label, for: 'f_' + f.key }), field));
+      var labelText = f.label + (f.required ? ' *' : '');
+      g.append(h('div', { class: 'field' + (f.key === 'notes' ? ' wide' : '') }, h('label', { text: labelText, for: 'f_' + f.key }), field));
     });
   }
   function openForm(record) {
@@ -391,6 +458,204 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
   });
   $('btnCancel').addEventListener('click', function () { if (!editingRow) clearDraft(); closeForm(); });
 
+  /* ---------- duplicate keys and list names ---------- */
+  var IGNORE_DUP = { '': 1, na: 1, nan: 1, none: 1, nil: 1, unknown: 1, tbd: 1 };
+  function dupKey(v) { // case, spaces, dashes and colons ignored: "ABC-123" equals "abc 123"
+    var k = String(v == null ? '' : v).toLowerCase().replace(/[\s\-_:.\/]/g, '');
+    return IGNORE_DUP[k] ? '' : k;
+  }
+  function nameKey(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function tidy(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' '); }
+  var EXTRA_KEY = 'printer-registry-extra-lists';
+  function getExtras() { try { return JSON.parse(localStorage.getItem(EXTRA_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function setExtras(x) { try { localStorage.setItem(EXTRA_KEY, JSON.stringify(x)); } catch (e) {} }
+  function listGroups(field) { // one group per name ignoring case and extra spaces
+    var map = {}, order = [];
+    rows.forEach(function (r) {
+      var v = tidy(r[field]); if (!v) return;
+      var k = nameKey(v);
+      if (!map[k]) { map[k] = { key: k, variants: {}, count: 0, rows: [] }; order.push(k); }
+      map[k].variants[r[field]] = (map[k].variants[r[field]] || 0) + 1;
+      map[k].count++; map[k].rows.push(r);
+    });
+    var groups = order.map(function (k) {
+      var g = map[k], best = '', bc = -1;
+      Object.keys(g.variants).forEach(function (n) { if (g.variants[n] > bc) { bc = g.variants[n]; best = n; } });
+      g.label = tidy(best); return g;
+    });
+    var have = {}; groups.forEach(function (g) { have[g.key] = 1; });
+    (getExtras()[field] || []).forEach(function (n) {
+      var k = nameKey(n);
+      if (k && !have[k]) { have[k] = 1; groups.push({ key: k, variants: {}, count: 0, rows: [], label: tidy(n), extra: true }); }
+    });
+    groups.sort(function (a, b) { return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }); });
+    return groups;
+  }
+  function canonName(field, v) { // reuse the spelling already in the sheet instead of creating a variant
+    var k = nameKey(v), g = listGroups(field).filter(function (x) { return x.key === k; })[0];
+    return g ? g.label : tidy(v);
+  }
+  var listField = 'department';
+  var LIST_LABEL = { department: 'department', location: 'location' };
+  function listErr(m) { $('listErr').textContent = m || ''; }
+  function renameInSheet(field, group, newName) {
+    var todo = group.rows.filter(function (r) { return r[field] !== newName; });
+    var done = 0;
+    function next() {
+      if (!todo.length) return Promise.resolve();
+      var r = todo.shift(), data = {};
+      FIELDS.forEach(function (f) { data[f.key] = r[f.key] || ''; });
+      data[field] = newName;
+      return postScript({ action: 'update', row: r._row, data: data }).then(function (res) {
+        if (!res.ok) throw new Error(res.error || 'Update failed');
+        done++; toast('Updating printers… ' + done + ' of ' + (done + todo.length));
+        return next();
+      });
+    }
+    return next().then(function () { return done; });
+  }
+  function doRename(group) {
+    var field = listField; listErr('');
+    var nn = tidy(prompt('Rename this ' + LIST_LABEL[field] + ' (or type an existing name to merge into it):', group.label));
+    if (!nn || nn === group.label) return;
+    var k = nameKey(nn), target = listGroups(field).filter(function (g) { return g.key === k && g.key !== group.key; })[0];
+    var finalName = target ? target.label : nn;
+    var msg = group.count ? ('Change ' + group.count + ' printer(s) from "' + group.label + '" to "' + finalName + '"' + (target ? ' (merge)' : '') + '?') : ('Rename "' + group.label + '" to "' + finalName + '"?');
+    if (!confirm(msg)) return;
+    if (!group.count) { swapExtra(field, group.label, finalName); renderLists(); return; }
+    renameInSheet(field, group, finalName).then(function () { toast('Updated'); load(false); })
+      .catch(function (e) { listErr('Stopped: ' + e.message + '. Refresh and check the sheet.'); load(false); });
+  }
+  function doRemove(group) {
+    var field = listField; listErr('');
+    if (!group.count) {
+      if (!confirm('Remove "' + group.label + '" from the list?')) return;
+      swapExtra(field, group.label, null); renderLists(); return;
+    }
+    var others = listGroups(field).filter(function (g) { return g.key !== group.key; });
+    if (!others.length) { listErr('There is no other ' + LIST_LABEL[field] + ' to move these printers to.'); return; }
+    var nn = tidy(prompt(group.count + ' printer(s) use "' + group.label + '". Move them to which ' + LIST_LABEL[field] + '?\n\nExisting: ' + others.map(function (g) { return g.label; }).join(', '), ''));
+    if (!nn) return;
+    var k = nameKey(nn), target = others.filter(function (g) { return g.key === k; })[0];
+    if (!target) { listErr('"' + nn + '" is not an existing ' + LIST_LABEL[field] + '. Add it first, or type one from the list.'); return; }
+    if (!confirm('Move ' + group.count + ' printer(s) to "' + target.label + '" and remove "' + group.label + '"?')) return;
+    renameInSheet(field, group, target.label).then(function () { swapExtra(field, group.label, null); toast('Removed'); load(false); })
+      .catch(function (e) { listErr('Stopped: ' + e.message + '. Refresh and check the sheet.'); load(false); });
+  }
+  function swapExtra(field, oldName, newName) {
+    var x = getExtras(), k = nameKey(oldName);
+    x[field] = (x[field] || []).filter(function (n) { return nameKey(n) !== k; });
+    if (newName) x[field].push(newName);
+    setExtras(x);
+  }
+  function renderLists() {
+    var tabs = $('listTabs'); tabs.textContent = '';
+    ['department', 'location'].forEach(function (f) {
+      tabs.append(h('button', { class: 'btn small' + (f === listField ? ' on' : ''), type: 'button', onclick: function () { listField = f; listErr(''); renderLists(); } }, f === 'department' ? 'Departments' : 'Locations'));
+    });
+    var body = $('listBody'); body.textContent = '';
+    var groups = listGroups(listField);
+    if (!groups.length) { body.append(h('p', { text: 'Nothing here yet.' })); return; }
+    groups.forEach(function (g) {
+      var names = Object.keys(g.variants), dup = names.length > 1;
+      var meta = g.extra ? 'No printers yet (saved on this device)' : (g.count + ' printer' + (g.count === 1 ? '' : 's') + (dup ? ' • spelled: ' + names.map(function (n) { return '"' + n + '"'; }).join(', ') : ''));
+      body.append(h('div', { class: 'lrow' },
+        h('span', { class: 'lname', text: g.label }),
+        dup ? h('span', { class: 'badge warn', text: 'duplicate spelling' }) : null,
+        h('span', { class: 'lmeta', text: meta }),
+        h('div', { class: 'lbtns' },
+          h('button', { class: 'btn small', type: 'button', onclick: function () { doRename(g); } }, dup ? 'Fix / merge' : 'Rename'),
+          h('button', { class: 'btn small', type: 'button', onclick: function () { doRemove(g); } }, 'Remove'))));
+    });
+  }
+  $('btnLists').addEventListener('click', function () {
+    var p = $('listsPanel'); p.hidden = !p.hidden;
+    if (!p.hidden) { listErr(''); renderLists(); p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  });
+  $('listClose').addEventListener('click', function () { $('listsPanel').hidden = true; });
+  $('listAdd').addEventListener('click', function () {
+    listErr('');
+    var n = tidy($('listNew').value); if (!n) return;
+    if (listGroups(listField).some(function (g) { return g.key === nameKey(n); })) { listErr('"' + n + '" already exists.'); return; }
+    swapExtra(listField, n, n); $('listNew').value = ''; renderLists(); toast('Added. It will appear when adding a printer.');
+  });
+
+  /* ---------- issue tracker ---------- */
+  var issues = [], issuesState = 'idle', issuesMsg = '';
+  function printerKey(r) { return dupKey(r.newSerial) || dupKey(r.oldSerial) || dupKey(r.ip) || ('name:' + nameKey(r.name)); }
+  function issueMatches(i, r) { return i.key ? i.key === printerKey(r) : nameKey(i.printerName) === nameKey(r.name); }
+  function issueCount(r) { var n = 0; issues.forEach(function (i) { if (issueMatches(i, r)) n++; }); return n; }
+  function topIssues() {
+    return rows.map(function (r) { return [r.name || '(no name)', issueCount(r)]; })
+      .filter(function (a) { return a[1] > 0; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8);
+  }
+  function todayStr() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function loadIssues() {
+    fetch(SCRIPT_URL + '?action=issues&t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok || !Array.isArray(res.issues)) throw new Error('The script has no issue tracker yet. Add the issue-tracker code to your Apps Script and redeploy it.');
+        issues = res.issues; issuesState = 'ok'; issuesMsg = '';
+      })
+      .catch(function (e) { issues = []; issuesState = 'error'; issuesMsg = e.message; })
+      .then(function () { render(); if (!$('issuePanel').hidden) renderIssues(); });
+  }
+  var curRow = null;
+  function printerById(id) { return rows.filter(function (r) { return String(r._row) === String(id); })[0]; }
+  function openIssues(r) {
+    if (!r) return;
+    curRow = r._row; $('issuePanel').hidden = false; $('issErr').textContent = '';
+    if (!$('issDate').value) $('issDate').value = todayStr();
+    $('issNote').value = '';
+    renderIssues(); render();
+    $('issuePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function closeIssues() { $('issuePanel').hidden = true; curRow = null; render(); }
+  function renderIssues() {
+    var pr = printerById(curRow);
+    if (!pr) { $('issuePanel').hidden = true; curRow = null; return; }
+    $('issueTitle').textContent = pr.name || 'Printer';
+    var info = $('issInfo'); info.textContent = '';
+    [['department', 'Department'], ['location', 'Location'], ['model', 'Model'], ['status', 'Status'], ['ip', 'IP'], ['newSerial', 'New serial'], ['oldSerial', 'Old serial'], ['engine', 'Engine cycle'], ['company', 'Company']].forEach(function (p) {
+      if (pr[p[0]]) info.append(h('div', {}, h('small', { text: p[1] }), pr[p[0]]));
+    });
+    var list = issues.filter(function (i) { return issueMatches(i, pr); })
+      .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || (b._row - a._row); });
+    $('issHistTitle').textContent = 'Issue history — ' + list.length + ' issue' + (list.length === 1 ? '' : 's');
+    var box = $('issHist'); box.textContent = '';
+    if (issuesState === 'error') { box.append(h('p', { class: 'err', text: issuesMsg })); $('issSave').disabled = true; return; }
+    $('issSave').disabled = false;
+    if (!list.length) { box.append(h('p', { text: 'No issues logged for this printer yet.' })); return; }
+    list.forEach(function (i) {
+      box.append(h('div', { class: 'hitem' },
+        h('div', { class: 'hhead' },
+          h('span', { text: i.date }),
+          h('button', { class: 'btn small', type: 'button', onclick: function () { deleteIssue(i); } }, 'Delete')),
+        h('div', { class: 'hnote', text: i.note })));
+    });
+  }
+  function deleteIssue(i) {
+    if (!confirm('Delete this issue note?')) return;
+    postScript({ action: 'issueDelete', row: i._row, date: i.date, note: i.note }).then(function (res) {
+      if (!res.ok) { $('issErr').textContent = res.error || 'Could not delete.'; loadIssues(); return; }
+      toast('Issue deleted'); loadIssues();
+    }).catch(function (e) { $('issErr').textContent = 'Request failed: ' + e.message; });
+  }
+  $('issClose').addEventListener('click', closeIssues);
+  $('issClose2').addEventListener('click', closeIssues);
+  $('issSave').addEventListener('click', function () {
+    var pr = printerById(curRow), note = $('issNote').value.trim();
+    if (!pr) { $('issErr').textContent = 'Select a printer first.'; return; }
+    if (note.length < 3) { $('issErr').textContent = 'Write a note saying what happened.'; return; }
+    $('issSave').disabled = true; $('issErr').textContent = '';
+    postScript({ action: 'issueAdd', data: { date: $('issDate').value || todayStr(), key: printerKey(pr), printerName: pr.name || '', department: pr.department || '', note: note } })
+      .then(function (res) {
+        $('issSave').disabled = false;
+        if (!res.ok) { $('issErr').textContent = res.error || 'Could not save.'; return; }
+        $('issNote').value = ''; toast('Issue logged for ' + (pr.name || 'printer')); loadIssues();
+      }).catch(function (e) { $('issSave').disabled = false; $('issErr').textContent = 'Request failed: ' + e.message; });
+  });
+
   function postScript(payload) {
     return fetch(SCRIPT_URL, {
       method: 'POST',
@@ -401,9 +666,26 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
   $('btnSave').addEventListener('click', function () {
     var data = {};
     FIELDS.forEach(function (f) { data[f.key] = $('f_' + f.key).value.trim(); });
-    if (!data.name) { $('formErr').textContent = 'Printer name is required.'; return; }
-    $('btnSave').disabled = true; $('formErr').textContent = '';
     var isEdit = !!editingRow;
+    var missing = FIELDS.filter(function (f) { return f.required && !data[f.key]; }).map(function (f) { return f.label; });
+    if (missing.length) { $('formErr').textContent = missing.join(', ') + (missing.length > 1 ? ' are required.' : ' is required.'); return; }
+    ['department', 'location', 'company'].forEach(function (k) { if (data[k]) data[k] = canonName(k, data[k]); });
+    var UNIQUE_FIELDS = [{ key: 'ip', label: 'IP address' }, { key: 'oldSerial', label: 'Old serial' }, { key: 'newSerial', label: 'New serial' }];
+    for (var u = 0; u < UNIQUE_FIELDS.length; u++) {
+      var uf = UNIQUE_FIELDS[u];
+      var val = dupKey(data[uf.key]);
+      if (!val) continue;
+      var dupRow = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (isEdit && rows[i]._row === editingRow) continue;
+        if (dupKey(rows[i][uf.key]) === val) { dupRow = rows[i]; break; }
+      }
+      if (dupRow) {
+        $('formErr').textContent = uf.label + ' "' + data[uf.key] + '" is already used by "' + (dupRow.name || dupRow.department || 'another printer') + '" (' + (dupRow.department || 'no department') + '). It must be unique.';
+        return;
+      }
+    }
+    $('btnSave').disabled = true; $('formErr').textContent = '';
     var payload = isEdit ? { action: 'update', row: editingRow, data: data } : { action: 'add', data: data };
     postScript(payload).then(function (res) {
       $('btnSave').disabled = false;
@@ -505,6 +787,7 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
     var by = state.sort;
     list.sort(function (a, b) {
       if (by === 'sheet') return a._id - b._id;
+      if (by === 'issues') return issueCount(b) - issueCount(a) || cmp(a.name, b.name);
       if (by === 'engine') {
         var ea = parseFloat(String(a.engine).replace(/[, ]/g, '')), eb = parseFloat(String(b.engine).replace(/[, ]/g, ''));
         ea = isFinite(ea) ? ea : -1; eb = isFinite(eb) ? eb : -1;
@@ -513,6 +796,20 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
       return cmp(a[by], b[by]) || cmp(a.name, b.name);
     });
     return list;
+  }
+  function dedupeCI(values) {
+    var seen = {}, out = [];
+    values.forEach(function (v) {
+      var k = v.trim().toLowerCase();
+      if (!seen[k]) { seen[k] = true; out.push(v.trim()); }
+    });
+    return out;
+  }
+  function refreshDatalists() {
+    Object.keys(DATALIST_FOR).forEach(function (key) {
+      var el = $(DATALIST_FOR[key]); el.textContent = '';
+      dedupeCI(distinct(key).concat((getExtras()[key] || []))).forEach(function (v) { el.append(h('option', { value: v })); });
+    });
   }
   function distinct(key) {
     return Array.from(new Set(rows.map(function (r) { return r[key]; }).filter(Boolean))).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
@@ -557,13 +854,14 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
     var statusData = countBy('status'), withIp = rows.filter(function (r) { return /^\d+\.\d+\.\d+\.\d+$/.test(String(r.ip || '').trim()); }).length;
     var activeCount = 0; statusData.forEach(function (d) { if (d[0].toLowerCase() === 'active') activeCount = d[1]; });
     var ds = $('dashStats'); ds.textContent = '';
-    [['Printers', rows.length], ['Active', activeCount], ['Networked (IP)', withIp], ['Departments', distinct('department').length]].forEach(function (s) {
+    [['Printers', rows.length], ['Active', activeCount], ['Networked (IP)', withIp], ['Departments', distinct('department').length], ['Issues logged', issues.length]].forEach(function (s) {
       ds.append(h('div', { class: 'stat' }, h('b', { text: s[1] }), h('span', { text: s[0] })));
     });
     renderDonut('donutStatus', 'legendStatus', statusData);
     renderBarList('barLocation', countBy('location'));
     renderBarList('barCompany', countBy('company'));
     renderBarList('barDept', countBy('department', 8));
+    renderBarList('barIssues', topIssues());
   }
   function fillSelect(id, values, current, allLabel) {
     var el = $(id); el.textContent = '';
@@ -573,6 +871,8 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
     return el.value;
   }
   function render() {
+    refreshDatalists();
+    if (!$('listsPanel').hidden) renderLists();
     if (state.view === 'dashboard') { renderDashboard(); return; }
     var st = $('stats'); st.textContent = '';
     [['Printers', rows.length], ['Departments', distinct('department').length], ['Locations', distinct('location').length], ['Companies', distinct('company').length]].forEach(function (s) {
@@ -585,10 +885,12 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
     $('sort').value = state.sort;
     var cg = $('colgroup'); cg.textContent = ''; var totalW = 0;
     FIELDS.forEach(function (f) { var w = COLWIDTH[f.key] || 90; totalW += w; cg.append(h('col', { style: 'width:' + w + 'px' })); });
+    if (canWrite) { totalW += ISSUES_WIDTH; cg.append(h('col', { style: 'width:' + ISSUES_WIDTH + 'px' })); }
     if (canWrite) { totalW += ACTIONS_WIDTH; cg.append(h('col', { style: 'width:' + ACTIONS_WIDTH + 'px' })); }
     $('dataTable').style.width = totalW + 'px';
     var hr = $('headRow'); hr.textContent = '';
     FIELDS.forEach(function (f) { hr.append(h('th', { text: f.label })); });
+    if (canWrite) hr.append(h('th', { text: 'Issues' }));
     if (canWrite) hr.append(h('th', { text: 'Actions' }));
     var list = visibleRows(), tb = $('tbody'), empty = $('empty');
     tb.textContent = ''; empty.textContent = ''; empty.hidden = true;
@@ -600,7 +902,8 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
       return;
     }
     list.forEach(function (r) {
-      var tr = h('tr', { class: 'main' });
+      var tr = h('tr', { class: 'main' + (canWrite ? ' clickable' : '') + (String(r._row) === String(curRow) && !$('issuePanel').hidden ? ' sel' : '') });
+      if (canWrite) tr.addEventListener('click', function (ev) { if (ev.target.closest('button, a, input, select')) return; openIssues(r); });
       FIELDS.forEach(function (f) {
         var v = r[f.key];
         var content = !v ? h('span', { class: 'dim', text: '—' })
@@ -612,6 +915,11 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
         var cls = (f.key === 'name' ? 'first ' : '') + (f.key === 'engine' ? 'num ' : '') + (f.key === 'notes' ? 'wrap' : '');
         tr.append(h('td', { class: cls.trim(), 'data-label': f.label, title: v || null }, content));
       });
+      if (canWrite) {
+        var ic = issueCount(r);
+        tr.append(h('td', { class: 'num', 'data-label': 'Issues' }, issuesState !== 'ok' ? h('span', { class: 'dim', text: '\u2014' })
+          : h('button', { class: 'issuebtn', type: 'button', title: 'View issues', onclick: function () { openIssues(r); } }, h('span', { class: 'badge' + (ic ? ' bad' : ''), text: ic }))));
+      }
       if (canWrite) {
         tr.append(h('td', { 'data-label': 'Actions' }, h('div', { class: 'rowbtns' },
           h('button', { class: 'btn iconbtn', type: 'button', 'aria-label': 'Edit', title: 'Edit', onclick: function () { openForm(r); } }, svg(ICON_EDIT)),
@@ -631,7 +939,7 @@ tr.main:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transp
           if (!res.ok) throw new Error(res.error || 'Script error');
           rows = res.rows.map(function (r) { r._id = r._row; return r; });
           headers = FIELDS.map(function (f) { return f.label; });
-          loadedAt = new Date(); $('fallback').hidden = true;
+          loadedAt = new Date(); $('fallback').hidden = true; loadIssues();
           setConn(false, rows.length + ' printers loaded at ' + clock(loadedAt) + '. Add, edit and delete write straight to the sheet.');
           render();
           if (manual) toast('Sheet reloaded');
